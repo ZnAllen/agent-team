@@ -61,6 +61,48 @@
 
 ---
 
+## 現行指標與評估報告
+
+以下為 2026-06-22 當日執行的三項客觀評估結果。
+
+### 1. 結構完整性驗證 ✅
+
+| 檢查項 | 結果 | 說明 |
+|--------|------|------|
+| Agent 配置覆蓋率 | 15/15 全對應 ✅ | 所有 agent 在 global + project opencode.json 皆有定義 |
+| ADR 交叉引用 | 2/2 有效，0 斷鏈 ✅ | 006→002、008→006 引用正確 |
+| ADR 自引用過濾 | 正確排除 ✅ | 003 引用自身、005 引用自身，未誤報 |
+| 文件完整性 | 15 個文件, 2,637 行 ✅ | 無缺失文件 |
+| MCP Server 覆蓋 | 4 個伺服器正常連線 ✅ | memory-global、memory-project、sequential-thinking、playwright |
+| Plugin | 1 個（skill-scanner）✅ | 正常啟用 |
+
+### 2. 記憶體圖譜審計 ⚠️
+
+| 檢查項 | 結果 | 改善建議 |
+|--------|------|---------|
+| Entity 總數 | **0**（資料遺失）❌ | MCP `server-memory` 僅在記憶體中操作，重啟後資料消失 |
+| Relation 總數 | **0** | 需確認 `MEMORY_FILE_PATH` 環境變數是否正確生效 |
+| Entity Type 一致性 | 無法評估 | 上次 session 建立的 entity 已全部遺失 |
+
+> **發現：** `@modelcontextprotocol/server-memory` 不主動 flush 到檔案，程序重啟後所有資料消失。
+> 這表示「知識持久化」目前只是宣稱，實際上是 **session-only**。
+> 建議：建置排程 flush 機制（`process.on('SIGINT', flush)`），或改用持久化 backend。
+
+### 3. 自信度校準 (ECE) ⏳
+
+| 檢查項 | 結果 | 說明 |
+|--------|------|------|
+| 抽樣可行性 | **不可行** ❌ | 舊模型已刪除、researcher 已移除、memory stores 為空，無歷史 response 可驗證 |
+| 已知缺口 | `team-infrastructure.md:169` 已記錄 ✅ | 該文件明確標示「自信度校準未驗證」 |
+| 格式合規率 | 16/16（先前測試）✅ | 所有 agent 輸出均含 `[CONFIDENT]`/`[UNCERTAIN]` 標記 |
+| 標記準確率 | **未知** ❌ | 從未系統性地驗證過標記與實際品質的關聯 |
+
+> **發現：** ECE 驗證需要設計標準測試集（每類任務 3-5 題），在 agent 穩定運作後再執行。
+> 當前的 `[CONFIDENT]` 標記只是格式合規，不保證內容可信。
+> 這是已知的設計缺口（見 `team-infrastructure.md`），將在下一階段產品開發中建立測試流程後處理。
+
+---
+
 ## Repository 結構
 
 ```
