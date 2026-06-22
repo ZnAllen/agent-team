@@ -1,0 +1,21 @@
+# OpenCode internal state (memory, cache, etc)
+.opencode/
+
+# Session notes — contain unfinished thoughts and personal notes
+docs/session-notes/
+
+# Team learning sandbox
+team-learn/
+
+# Benchmark data (stale)
+benchmark-*.csv
+docs/benchmark-analysis-*.md
+
+# Node.js
+node_modules/
+package-lock.json
+bun.lock
+
+# OS
+.DS_Store
+Thumbs.db

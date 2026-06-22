@@ -1,0 +1,30 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  "instructions": ["AGENTS.md"],
+
+  "references": {
+    "project-docs": {
+      "path": "E:/Agent team/docs",
+      "description": "Product vision, ADRs, conventions, session notes — the team's persistent knowledge base. Use for architecture context, past decisions, and project direction."
+    }
+  },
+
+  "agent": {
+    "mentor": {
+      "description": "Patient mentor and pair-programmer who teaches as you code. Use when you want to learn new concepts, understand code patterns, or need step-by-step guidance while building.",
+      "mode": "subagent"
+    }
+  },
+
+  "mcp": {
+    "memory-project": {
+      "type": "local",
+      "command": ["node", "C:/nvm4w/nodejs/node_modules/@modelcontextprotocol/server-memory/dist/index.js"],
+      "enabled": true,
+      "env": {
+        "MEMORY_FILE_PATH": "E:/Agent team/.opencode/memory-project.jsonl"
+      }
+    }
+  }
+}
