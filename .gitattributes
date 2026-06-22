@@ -1,0 +1,8 @@
+# Auto-detect text files and normalize to LF
+* text=auto
+
+# Explicitly mark these as text
+*.md text
+*.json text
+*.ps1 text
+*.sh text
