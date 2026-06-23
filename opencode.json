@@ -7,6 +7,10 @@
     "project-docs": {
       "path": "E:/Agent team/docs",
       "description": "Product vision, ADRs, conventions, session notes — the team's persistent knowledge base. Use for architecture context, past decisions, and project direction."
+    },
+    "team-agents": {
+      "path": "E:\\Agent team\\docs\\agents",
+      "description": "Per-role knowledge bases: domain conventions, ecosystem tracking, learning targets for all 15 agent roles"
     }
   },
 
