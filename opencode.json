@@ -20,9 +20,9 @@
   "mcp": {
     "memory-project": {
       "type": "local",
-      "command": ["node", "C:/nvm4w/nodejs/node_modules/@modelcontextprotocol/server-memory/dist/index.js"],
-      "enabled": true,
-      "env": {
+      "command": ["C:\\nvm4w\\nodejs\\node.exe", "C:\\Users\\User\\AppData\\Local\\opencode-mcp\\node_modules\\@modelcontextprotocol\\server-memory\\dist\\index.js"],
+      "enabled": false,
+      "environment": {
         "MEMORY_FILE_PATH": "E:/Agent team/.opencode/memory-project.jsonl"
       }
     }

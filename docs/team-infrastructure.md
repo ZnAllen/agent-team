@@ -2,170 +2,176 @@
 
 ## 1. 架構概觀
 
-本文件提供 Agent Team 基礎架構的完整參考，涵蓋 `E:\Agent team` 工作區內所有元件。團隊以 **opencode CLI** 為核心，驅動 32 個 Agent（16 雲端 API + 16 本地 Ollama），搭配 MCP 向量記憶系統，實現分層路由、零成本研究與自動化每日技術掃描。
+本文件提供 Agent Team 基礎架構的完整參考，涵蓋 `E:\Agent team` 工作區內所有元件。團隊以 **opencode CLI** 為核心，驅動 15 個雲端 API Agent，搭配 nram 記憶系統與多個 MCP 伺服器，實現分層路由、持久化知識管理與自動化 CI/CD。
+
+### 核心哲學
+
+- **純雲端架構** — 無本地模型，無 Ollama 依賴，VRAM 使用量 0 GB
+- **兩層路由** — Lead 直接處理 Tier 1（研究/查詢）與 Tier 3（架構/設計/安全），僅 Tier 2（實作/測試/審查）委派給專屬 agent
+- **記憶持久化** — nram (Go + SQLite) 提供跨 session 的知識保留，無需 embedding 也有 FTS5 全文搜尋
+- **所有文件繁體中文（zh-TW）**，保留原文技術詞彙
 
 ## 2. 系統架構圖
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                        opencode CLI                           │
-│              (指令路由 + 工具調用 + MCP 客戶端)                 │
-├──────────────────────────────────────────────────────────────┤
-│  ┌────────────────────────┐  ┌────────────────────────────┐  │
-│  │  16 API Agents (Tier 2) │  │  16 Ollama Apprentices    │  │
-│  │  (cloud API, 正式執行)   │  │  (local qwen3:1.7b, 研究) │  │
-│  │                        │  │  Tier 1: 0 API cost        │  │
-│  │  code-writer-a/b/c/d   │  │  ─────────────────         │  │
-│  │  code-reviewer         │  │  共用同一基底權重           │  │
-│  │  architecture-guardian │  │  16 組不同的 Modelfile      │  │
-│  │  design-reviewer       │  │  (SYSTEM prompt + temp.)    │  │
-│  │  security-reviewer     │  │                             │  │
-│  │  test-writer           │  │  temp 0.3 (Precise) ×4      │  │
-│  │  memory-keeper         │  │  temp 0.4-0.6 (Balanced)×7  │  │
-│  │  devops-sre            │  │  temp 0.7 (Creative) ×5     │  │
-│  │  mentor                │  │                             │  │
-│  │  product-manager       │  │  ─────────────────         │  │
-│  │  user-researcher       │  │  無網路權限，純文字推理      │  │
-│  │  tech-architect        │  │  回覆標記自信度              │  │
-│  │                        │  │  [CONFIDENT]/[UNCERTAIN]    │  │
-│  └────────────────────────┘  └────────────────────────────┘  │
-├──────────────────────────────────────────────────────────────┤
-│  MCP Memory Servers                                          │
-│  ┌──────────────────────┐  ┌──────────────────────────────┐  │
-│  │  memory-global        │  │  memory-project              │  │
-│  │  ~/.opencode/         │  │  E:\Agent team\.opencode/    │  │
-│  │  跨專案偏好/風格/習慣   │  │  本專案領域/架構/團隊脈絡    │  │
-│  └──────────────────────┘  └──────────────────────────────┘  │
-├──────────────────────────────────────────────────────────────┤
-│  組態源頭: C:\Users\User\.config\opencode\opencode.json     │
-│  (定義 32 個 Agent 的 mode/description/command)             │
-└──────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                     opencode CLI                          │
+│           (指令路由 + 工具調用 + MCP 客戶端)               │
+├──────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────────────────────────────┐    │
+│  │             15 雲端 API Agents (Tier 2)           │    │
+│  │                                                   │    │
+│  │  code-writer-a/b/c/d  (前端/後端/共用/GPU)         │    │
+│  │  code-reviewer         (程式審查)                  │    │
+│  │  architecture-guardian (架構合規)                  │    │
+│  │  design-reviewer       (UI/UX 審查)               │    │
+│  │  security-reviewer     (安全審計)                  │    │
+│  │  test-writer           (測試)                     │    │
+│  │  memory-keeper         (知識管理)                 │    │
+│  │  devops-sre            (CI/CD/維運)               │    │
+│  │  mentor                (教學)                     │    │
+│  │  product-manager       (產品策略)                 │    │
+│  │  user-researcher       (用戶研究)                 │    │
+│  │  tech-architect        (架構設計)                 │    │
+│  └──────────────────────────────────────────────────┘    │
+│                                                          │
+│  ┌──────────────────────────────────────────────────┐    │
+│  │   MCP Servers (6 個已啟用)                       │    │
+│  │                                                   │    │
+│  │  nram         記憶系統 (Go + SQLite + FTS5)       │    │
+│  │  codebase-    程式碼知識圖譜 (Cypher/LSP)         │    │
+│  │    memory                                         │    │
+│  │  sequential-   結構化推理鏈                       │    │
+│  │    thinking                                       │    │
+│  │  playwright    E2E 瀏覽器自動化                   │    │
+│  │  headroom      Token 壓縮                         │    │
+│  │  github        GitHub API 操作                   │    │
+│  │  mysql         資料庫查詢 (唯讀)                  │    │
+│  │  docker        容器管理 (需 Docker Desktop 運行)   │    │
+│  └──────────────────────────────────────────────────┘    │
+├──────────────────────────────────────────────────────────┤
+│  組態源頭: C:\Users\User\.config\opencode\opencode.json  │
+│  (定義 15 個 Agent + 8 個 MCP 的完整配置)                │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ## 3. Agent 階層與路由
 
 ```
-收到任務 → 關鍵字比對判定 Tier
+收到任務 ─── 關鍵字比對判定 Tier
   │
-  ├── Tier 1: 研究/查詢/解釋（0 API cost）
-  │     → @apprentice-xxx (本機 qwen3:1.7b)
-  │       ├── [CONFIDENT] → 直接回覆使用者
-  │       └── [UNCERTAIN] → 附 context 轉 Tier 2
+  ├── Tier 1: 研究/查詢/解釋 (Lead 直做)
+  │     → 無委派，直接回答
   │
-  ├── Tier 2: 實作/測試/審查（雲端 API）
-  │     → @code-writer-a/b/c/d, @test-writer, 等
-  │     ※ 可選：先派學徒（Tier 1）收集 context
+  ├── Tier 2: 實作/測試/審查 (委派雲端 API)
+  │     → @code-writer-a/b/c/d, @test-writer 等
+  │     ※ 觸發字：實作、寫、新增、修改、測試、Review、審查
   │
-  └── Tier 3: 架構/設計/安全/策略（Lead 直做）
-        → @product-manager, @tech-architect,
-          @security-reviewer, @architecture-guardian
+  └── Tier 3: 架構/設計/安全/策略 (Lead 直做)
+        → 觸發字：架構、設計、規劃、安全、審計、策略、除錯
+        → 複雜工作由 Lead 直接完成，不委派
 ```
 
 **路由關鍵字對照：**
-| 觸發字 | Tier | 路由目標 |
+| 觸發字 | Tier | 處理方式 |
 |--------|------|----------|
-| 研究、查詢、解釋、比較、摘要 | T1 | @apprentice-xxx |
-| 實作、寫、新增、測試、Review | T2 | 對應 code-writer / test-writer |
-| 架構、設計、規劃、安全、審計 | T3 | Lead 直做 |
+| 研究、查詢、解釋、比較、摘要 | T1 | Lead 直做 |
+| 實作、寫、新增、測試、Review | T2 | 委派對應 code-writer / test-writer |
+| 架構、設計、規劃、安全、審計、策略 | T3 | Lead 直做 |
 
-**Lead 角色：** Orchestrator — 不直接實作，負責任務拆解、委派、品質閘門。
+## 4. MCP 伺服器清單
 
-## 4. Apprentice 模型架構
+所有 MCP 伺服器均使用**絕對路徑**執行（npm 不在 PATH 中）：
 
-所有 16 個學徒模型共用同一個基底權重 `qwen3:1.7b`（~1.8GB VRAM），透過不同的 Modelfile 實現角色分化：
+| 伺服器 | 類型 | 用途 | 二進位路徑 |
+|--------|------|------|-----------|
+| nram | remote | 持久化記憶 (SQLite + FTS5) | `C:\Users\User\AppData\Local\opencode-mcp\nram\nram.exe` |
+| codebase-memory-mcp | local | 程式碼知識圖譜 (Cypher/LSP) | `C:\Users\User\AppData\Local\opencode-mcp\cbm\codebase-memory-mcp.exe` |
+| sequential-thinking | local | 結構化推理鏈 | `pnpm.cmd -s start` |
+| playwright | local | 瀏覽器自動化 | `npx.cmd @playwright/mcp` |
+| headroom | local | Token 壓縮 | `headroom.exe mcp serve` |
+| github | local | GitHub API | `npx.cmd -y @modelcontextprotocol/server-github` |
+| mysql | local | 資料庫查詢 (唯讀) | `node.exe ...mysql-mcp-server` |
+| docker | local | 容器管理 | `pnpm.cmd -s start` |
 
-```
-qwen3:1.7b (基底模型, ~1.8GB VRAM)
-  │
-  ├── Modelfile: code-writer-a  ─── temp 0.7, SYSTEM: 前端開發
-  ├── Modelfile: code-writer-b  ─── temp 0.7, SYSTEM: 後端開發
-  ├── Modelfile: code-writer-c  ─── temp 0.7, SYSTEM: 共用工具
-  ├── Modelfile: code-writer-d  ─── temp 0.7, SYSTEM: GPU/CUDA
-  ├── Modelfile: devops-sre     ─── temp 0.7, SYSTEM: CI/CD/維運
-  ├── Modelfile: architecture-guardian ─ temp 0.4, SYSTEM: 合規審查
-  ├── Modelfile: test-writer    ─── temp 0.5, SYSTEM: 測試
-  ├── Modelfile: memory-keeper  ─── temp 0.5, SYSTEM: 記憶管理
-  ├── Modelfile: mentor         ─── temp 0.6, SYSTEM: 教學指導
-  ├── Modelfile: product-manager ── temp 0.5, SYSTEM: 產品策略
-  ├── Modelfile: tech-architect ─── temp 0.5, SYSTEM: 架構設計
-  ├── Modelfile: lead           ─── temp 0.5, SYSTEM: 團隊領導
-  ├── Modelfile: code-reviewer  ─── temp 0.3, SYSTEM: 程式審查
-  ├── Modelfile: design-reviewer ── temp 0.3, SYSTEM: UI/UX 審查
-  ├── Modelfile: security-reviewer ─ temp 0.3, SYSTEM: 安全審計
-  └── Modelfile: user-researcher ── temp 0.3, SYSTEM: 用戶研究
-```
+### nram 記憶系統
 
-**Temperature 對照表：**
-| 階層 | 溫度 | 模型數 | 適用場景 |
-|------|------|--------|----------|
-| Creative | 0.7 | 5 | 程式碼生成、腳本撰寫、創意發想 |
-| Balanced | 0.4-0.6 | 7 | 一般任務、產品策略、記憶管理 |
-| Precise | 0.3 | 4 | 審查、安全、品質閘門（要求一致性） |
+nram v0.9.0 (donuts-are-good/nram) 是核心記憶後端：
 
-所有模型共用基底權重，Ollama 透過 `Modelfile` 中的 `FROM qwen3:1.7b` 指向同一組參數，僅 SYSTEM prompt 與 temperature 不同。VRAM 佔用約 2GB（單一模型載入），足以在 4GB GPU 上運行。
+- **二進位：** `C:\Users\User\AppData\Local\opencode-mcp\nram\nram.exe` (52 MB)
+- **後端：** SQLite (WAL mode) + FTS5 全文搜尋 + pure-Go HNSW vector index
+- **資料庫：** `E:\Agent team\.opencode\nram.db`
+- **連接埠：** HTTP :8674 (Streamable HTTP, OAuth MCP)
+- **自動啟動：** 已加入 Windows 啟動資料夾，`scripts/start-nram.ps1` 負責啟動與健康檢查
+- **記憶空間：**
+  | Project | 內容 | 記憶數 |
+  |---------|------|--------|
+  | global | 工具知識、偏好、約定、MCP 資訊 | 10+ |
+  | agent-team | PRD、tech stack、ADRs、團隊上下文、session notes | 15+ |
+  | about_me | 使用者 persona (保留) | 自動 |
+- **無 embedding 提供者** — 搜尋使用 FTS5 關鍵字 (無語意向量搜尋)
 
-## 5. 每日技術掃描流程
-
-```
-Session 開始
-  ├── ① ensure-ollama.ps1
-  │     ├── 檢查 ollama.exe 是否執行
-  │     ├── 未執行 → Start-Process 自動啟動
-  │     └── 呼叫 warmup-ollama.ps1
-  │
-  ├── ② warmup-ollama.ps1
-  │     ├── GET /api/ps 檢查模型是否已載入
-  │     ├── 未載入 → POST /api/generate 推論一次
-  │     └── 設定 keep_alive=30m 保持 GPU 駐留
-  │
-  ├── ③ @memory-keeper 執行每日技術掃描
-  │     ├── 檢查 git 更新、相依套件、API 狀態
-  │     ├── 比對前日掃描結果
-  │     └── 產出 docs/session-notes/daily-tech-YYYY-MM-DD.md
-  │
-  └── ④ Lead 摘要發現 → 詢問使用者第一個指令
-```
-
-## 6. 關鍵檔案清單
+## 5. 關鍵檔案清單
 
 | 檔案 | 用途 |
 |------|------|
-| `E:\Agent team\AGENTS.md` | 專案層級 Agent 指令（每日掃描流程 + 路由協議） |
-| `E:\Agent team\ensure-ollama.ps1` | Ollama 啟動檢查 + GPU 預熱觸發 |
-| `E:\Agent team\warmup-ollama.ps1` | 將 qwen3:1.7b 載入 GPU 記憶體，設 keep_alive=30m |
-| `E:\Agent team\benchmark-apprentices.ps1` | 16 模型 × 3 查詢 = 48 次推論基準測試 |
-| `E:\Agent team\apprentices\build-all.ps1` | 批次建立所有 16 個 Ollama 模型 |
-| `E:\Agent team\apprentices\validate-all.ps1` | 7 項完整性檢查（Modelfile、KB、模型存在等） |
-| `C:\Users\User\.config\opencode\opencode.json` | 32 個 Agent 的單一組態源頭 |
-| `E:\Agent team\apprentices\{name}\Modelfile` | 各學徒的 Ollama 模型定義（FROM + SYSTEM + PARAMETER） |
-| `E:\Agent team\apprentices\{name}\knowledge-base.md` | 各學徒的領域知識庫 |
+| `E:\Agent team\AGENTS.md` | 團隊指令與路由協議 (global + project 兩層) |
+| `E:\Agent team\opencode.json` | 專案層級 OpenCode 配置 |
+| `E:\Agent team\scripts\start-nram.ps1` | nram 啟動腳本 (健康檢查 + 自動重啟) |
+| `C:\Users\User\.config\opencode\opencode.json` | 全域配置 — 15 個 Agent + 8 個 MCP |
+| `C:\Users\User\.config\opencode\skills\` | 技能檔案：memory-management, session-memory, decision-log |
+| `E:\Agent team\.opencode\commands\` | 自訂命令：session-start, session-end |
+| `E:\Agent team\.opencode\nram.db` | nram SQLite 資料庫 |
+| `E:\Agent team\.github\workflows\ci.yml` | GitHub Actions CI/CD |
+| `E:\Agent team\.github\dependabot.yml` | 自動相依性更新 |
 
-## 7. 基準測試結果摘要
+## 6. 基礎設施元件狀態
 
-**測試日期：** 2026-06-22
-**測試規模：** 16 models × 3 queries = 48/48 成功（100%）
+| 元件 | 狀態 | 說明 |
+|------|------|------|
+| Docker Desktop v29.5.3 | ✅ 正常 | WSL2 後端，需手動啟動或開機自動啟動 (已設定) |
+| MySQL 9.4 Server | ✅ 正常 | Windows 服務，root/ss941227 |
+| nram v0.9.0 | ✅ 正常 | HTTP :8674, MCP OAuth 已授權 |
+| GitHub | ✅ 正常 | 公開 repo: ZnAllen/agent-team, gh 已登入 |
+| CI/CD | ✅ 已設定 | PR/ push 到 main 自動觸發 lint + 檢查 |
+| codebase-memory-mcp v0.8.1 | ✅ 正常 | 269 MB, E:\Agent team 已索引 (68 nodes, 67 edges) |
+| Playwright MCP | ✅ 正常 | Chromium 149.0 (183 MB) |
 
-| 指標 | Creative (0.7) | Balanced (0.4-0.6) | Precise (0.3) |
-|------|---------------|-------------------|--------------|
-| 模型數 | 5 | 7 | 4 |
-| 首次 TTFT 中位數 | ~428ms | ~484ms | ~574ms |
-| 後續 TTFT | 65-101ms | 64-67ms | 66-70ms |
-| Tokens/s 範圍 | 82-90 | 70-89 | 78-87 |
-| 平均總時間 (查詢 A) | ~2.5-10s | ~2.3-5s | ~2.5-4.7s |
-| 平均總時間 (查詢 B) | ~14-17s | ~13-17s | ~11-20s |
+## 7. 已知限制與注意事項
 
-**關鍵發現：**
-- **First-call penalty:** 首次推論需載入模型，TTFT 顯著較高（268-673ms）；後續查詢降至 ~65ms
-- **VRAM 使用：** 單一 qwen3:1.7b 約佔 1.8GB，搭配 warmup keep_alive 可持續駐留 GPU
-- **設計審查者（design-reviewer）** 有最高首次 TTFT（673ms），因其知識庫較大（621 prompt tokens）
-- **T/s 穩定度：** 所有模型 tokens/s 集中在 80-90，差異主要來自輸出長度而非推理速度
-
-## 8. 已知限制與未來改善
-
-| 限制 | 影響 | 改善方向 |
+| 限制 | 影響 | 因應方式 |
 |------|------|----------|
-| qwen3:1.7b thinking 開銷 | ~30-70% 輸出為思考過程，浪費 tokens | 考慮切換至非 thinking 模型或設定思考預算上限 |
-| 無 Ollama 降級備援 | 若 Ollama 未執行，Tier 1 完全停擺 | 加入 HTTP 健康檢查 + 自動重啟邏輯 |
-| 自信度校準未驗證 | `[CONFIDENT]` / `[UNCERTAIN]` 的準確率未知 | 設計校準測試集，計算自信度 vs. 實際正確率 |
-| 16 模型同時載入 VRAM 不足 | 僅能同時駐留 1-2 個學徒 | 依賴 keep_alive + LRU 淘汰策略 |
-| 無集中式日誌 | 學徒回覆無法追溯除錯 | 加入 request/response 日誌到 `.opencode/logs/` |
+| npm/npx 不在 PATH | 所有 MCP 必須用絕對路徑 | 已全部使用絕對路徑配置 |
+| nram 無 embedding | 搜尋僅關鍵字，無法語意匹配 | 已夠用；未來可加 embedding provider |
+| Docker Desktop 需登入後手動啟動 | session 開始時 docker 命令可能失敗 | `scripts/start-nram.ps1` 模式可沿用；已加入啟動資料夾 |
+| 無集中式日誌 | 除錯需逐個查看 agent 回覆 | 待建立 logging 機制 |
+
+## 8. 部署流程
+
+```bash
+# 1. 確保必要服務運行
+.\scripts\start-nram.ps1                # nram 記憶伺服器
+Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"  # Docker
+
+# 2. 啟動 opencode
+opencode
+
+# 3. session 開始時自動執行 /session-start
+#    - 載入 nram procedural rules
+#    - 從 nram recall 專案與全域 context
+#    - 讀取相關檔案到 buffer
+
+# 4. session 結束時執行 /session-end
+#    - 將重要決策寫入 nram
+#    - 更新程序規則
+#    - 記錄 session notes (git-ignored)
+```
+
+## 9. 附錄：架構演化記錄
+
+| 階段 | 日期 | 本地模型 | VRAM | Agent 數 | MCP 數 |
+|------|------|---------|------|---------|--------|
+| Phase 1 | Jun 20 | 16 qwen3:1.7b | ~6.5 GB | 32 (16 cloud + 16 local) | 2 |
+| Phase 2 | Jun 22 | 1 researcher | ~2.0 GB | 17 (16 cloud + 1 local) | 4 |
+| Phase 3 | Jun 22 | 0 | 0 GB | 15 (all cloud) | 4 |
+| Phase 4 | Jun 23 | 0 | 0 GB | 15 (all cloud) | 8 (含 nram) |

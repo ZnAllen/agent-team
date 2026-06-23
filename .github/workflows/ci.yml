@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate JSON
+        run: |
+          find . -name "*.json" -not -path "./.opencode/*" -exec sh -c '
+            for f; do
+              if ! jq empty "$f" 2>/dev/null; then
+                echo "Invalid JSON: $f"; exit 1
+              fi
+            done
+          ' sh {} +
+
+      - name: Markdown lint
+        uses: DavidAnson/markdownlint-cli2-action@v19
+        with:
+          globs: |
+            *.md
+            docs/**/*.md
+          config: |
+            {
+              "MD013": { "line_length": 120 },
+              "MD024": false,
+              "MD033": false,
+              "MD041": false
+            }
+
+      - name: Check for broken links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --no-ignore
+            --exclude-all-private
+            --exclude "https://github.com/ZnAllen/agent-team"
+            --exclude "https://opencode.ai"
+            --exclude "mailto:"
+            --format markdown
+            "*.md" "docs/**/*.md"
+        if: success()
+
+      - name: Enforce ADR naming convention
+        run: |
+          for f in docs/decisions/*.md; do
+            basename=$(basename "$f")
+            if ! echo "$basename" | grep -qE '^[0-9]{3}-[a-z0-9-]+\.md$'; then
+              echo "Bad ADR filename: $f (expected 001-xxx-xxx.md)"
+              exit 1
+            fi
+          done
+          echo "All ADR filenames valid"
+
+      - name: Check no large files committed
+        run: |
+          git ls-files -z | xargs -0 -I {} sh -c '
+            size=$(wc -c < "{}")
+            if [ "$size" -gt 1048576 ]; then
+              echo "Large file: {} ($size bytes)"; exit 1
+            fi
+          '

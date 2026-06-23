@@ -16,6 +16,9 @@ node_modules/
 package-lock.json
 bun.lock
 
+# Playwright MCP runtime data
+.playwright-mcp/
+
 # OS
 .DS_Store
 Thumbs.db

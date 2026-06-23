@@ -45,7 +45,7 @@
 | 雲端 API Agents | 15 個（定義於 global opencode.json） |
 | 專案層級 Agents | 1 個（mentor，定義於專案 opencode.json） |
 | Agent 角色分類 | 審查 3、開發 4、策略 4、維運 2、教學 1、知識管理 1 |
-| MCP Servers | 4 個（記憶 ×2、Sequential Thinking、Playwright） |
+| MCP Servers | 6 個（nram、codebase-memory、sequential-thinking、playwright、headroom、github、mysql、docker） |
 | Plugin | 1 個（skill-scanner） |
 | 配置文件 | global + project 兩層，無重複 |
 
@@ -76,17 +76,14 @@
 | MCP Server 覆蓋 | 4 個伺服器正常連線 ✅ | memory-global、memory-project、sequential-thinking、playwright |
 | Plugin | 1 個（skill-scanner）✅ | 正常啟用 |
 
-### 2. 記憶體圖譜審計 ⚠️
+### 2. 記憶體圖譜審計 (已修復) ✅
 
-| 檢查項 | 結果 | 改善建議 |
-|--------|------|---------|
-| Entity 總數 | **0**（資料遺失）❌ | MCP `server-memory` 僅在記憶體中操作，重啟後資料消失 |
-| Relation 總數 | **0** | 需確認 `MEMORY_FILE_PATH` 環境變數是否正確生效 |
-| Entity Type 一致性 | 無法評估 | 上次 session 建立的 entity 已全部遺失 |
-
-> **發現：** `@modelcontextprotocol/server-memory` 不主動 flush 到檔案，程序重啟後所有資料消失。
-> 這表示「知識持久化」目前只是宣稱，實際上是 **session-only**。
-> 建議：建置排程 flush 機制（`process.on('SIGINT', flush)`），或改用持久化 backend。
+| 檢查項 | 結果 | 說明 |
+|--------|------|------|
+| 記憶系統 | **nram v0.9.0** ✅ | Go + SQLite (WAL) + FTS5，資料持久化於磁碟 |
+| Entity 總數 | **25+** ✅ | global 10 + agent-team 15+，含 session notes、決策、架構 |
+| 知識圖譜 | **已啟用** ✅ | nram 內建 entity relationship graph |
+| 舊 server-memory | **已棄用** ✅ | JSONL 資料已遷移至 nram，記憶不再 session-only |
 
 ### 3. 自信度校準 (ECE) ⏳
 
@@ -154,8 +151,8 @@ E:/Agent team/
 - **平台：** [OpenCode](https://opencode.ai)（AI 代理框架）
 - **本地模型（已棄用）：** qwen3:1.7b（Ollama）
 - **雲端模型：** opencode/gpt-5-nano（預設）
-- **向量記憶：** MCP server-memory（global + project）
-- **工具鏈：** Sequential Thinking MCP、Playwright MCP、skill-scanner plugin
+- **記憶系統：** nram (Go + SQLite + FTS5，取代舊 server-memory)
+- **工具鏈：** Sequential Thinking MCP、Playwright MCP、codebase-memory (Cypher/LSP)、headroom (token 壓縮)、skill-scanner plugin
 - **語言：** TypeScript（strict mode）、PowerShell 7（腳本）
 - **文件編碼：** 繁體中文（zh-TW），保留原文技術詞彙
 
